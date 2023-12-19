@@ -15,17 +15,11 @@ const TokenPositions = std.ArrayList(usize);
 const SourceSpan = imports.meta.SourceSpan;
 
 pub const Token = imports.token.Token;
-pub const TokenTag = imports.token.TokenTag;
 pub const TokenIndex = usize;
 
-const TokenData = struct {
-    token: Token,
-    position: usize,
-};
-
 pub const ScanResult = struct {
+    source: []const u8,
     tokens: TokenList,
-    positions: TokenPositions,
 
     const Self = @This();
 
@@ -37,24 +31,12 @@ pub const ScanResult = struct {
         }
     }
 
-    pub fn getTokenPosition(self: *const Self, index: TokenIndex) ?SourceSpan {
-        const token = self.getToken(index) orelse return null;
-
-        if (index >= self.positions.items.len) {
-            return null;
-        } else {
-            const position = self.positions.items[index];
-            return SourceSpan{ .begin = position, .end = position + token.size() };
-        }
-    }
-
     pub fn intoIter(self: *const Self) ScanResultIterator {
         return ScanResultIterator{ .scan_result = self, .next_token = 0 };
     }
 
     pub fn deinit(self: *Self) void {
         self.tokens.deinit();
-        self.positions.deinit();
     }
 };
 
@@ -69,7 +51,10 @@ pub const ScanResultIterator = struct {
             defer self.next_token += 1;
             return self.scan_result.tokens.items[self.next_token];
         } else {
-            return .eof;
+            return Token{
+                .tag = .eof,
+                .source_span = self.scan_result.source[self.scan_result.source.len..self.scan_result.source.len],
+            };
         }
     }
 
@@ -79,11 +64,14 @@ pub const ScanResultIterator = struct {
         }
     }
 
-    pub fn peek(self: *Self, ahead_of: TokenIndex) Token {
+    pub fn peek(self: *const Self, ahead_of: TokenIndex) Token {
         if (self.next_token + ahead_of < self.scan_result.tokens.items.len) {
             return self.scan_result.tokens.items[self.next_token + ahead_of];
         } else {
-            return .eof;
+            return Token{
+                .tag = .eof,
+                .source_span = self.scan_result.source[self.scan_result.source.len..self.scan_result.source.len],
+            };
         }
     }
 
@@ -99,31 +87,22 @@ pub const ScanResultIterator = struct {
 pub fn scan(allocator: Allocator, source: []const u8) !ScanResult {
     var tokens = TokenList.init(allocator);
     errdefer tokens.deinit();
-    var positions = TokenPositions.init(allocator);
-    errdefer positions.deinit();
 
-    var lexer = Lexer{ .allocator = allocator, .next_char = 0, .source = source };
+    var lexer = Lexer{ .allocator = allocator, .index = 0, .source = source };
 
-    while (try lexer.getTokenData()) |token_data| {
+    while (try lexer.getToken()) |token| {
         // Scan everything
-        try tokens.append(token_data.token);
-        try positions.append(token_data.position);
+        try tokens.append(token);
     }
-    return ScanResult{ .tokens = tokens, .positions = positions };
+    return ScanResult{ .source = source, .tokens = tokens };
 }
 
-// TODO: refactor names (getTokenData -> nextTokenData, getToken -> next)
 const Lexer = struct {
     allocator: Allocator,
-    next_char: usize,
+    index: usize,
     source: []const u8,
 
     const Self = @This();
-
-    fn getTokenData(self: *Self) !?TokenData {
-        const token = try self.getToken() orelse return null;
-        return TokenData{ .token = token, .position = self.next_char -| token.size() };
-    }
 
     // TODO: optimize, probably with a state machine
     fn getToken(self: *Self) !?Token {
@@ -171,33 +150,35 @@ const Lexer = struct {
     }
 
     fn consume(self: *Self, count: usize) void {
-        self.next_char += count;
+        self.index += count;
     }
 
     fn next(self: *Self) ?u8 {
-        if (self.next_char < self.source.len) {
-            defer self.next_char += 1;
-            return self.source[self.next_char];
+        if (self.index < self.source.len) {
+            defer self.index += 1;
+            return self.source[self.index];
         } else {
             return null;
         }
     }
 
     fn peek(self: *const Self, ahead_of: usize) ?u8 {
-        if (self.next_char + ahead_of < self.source.len) {
-            return self.source[self.next_char + ahead_of];
+        if (self.index + ahead_of < self.source.len) {
+            return self.source[self.index + ahead_of];
         } else {
             return null;
         }
     }
 
     fn chompPunctuation(self: *Self) ?Token {
+        const start = self.index;
+
         const StringToken = struct {
             string: []const u8,
-            token: Token,
+            token_tag: Token.Tag,
 
-            fn new(string: []const u8, token: Token) @This() {
-                return @This(){ .string = string, .token = token };
+            fn new(string: []const u8, token_tag: Token.Tag) @This() {
+                return @This(){ .string = string, .token_tag = token_tag };
             }
         };
 
@@ -239,22 +220,20 @@ const Lexer = struct {
 
             if (found) {
                 self.consume(consumed);
-                return st.token;
+                return Token{ .tag = st.token_tag, .source_span = self.getSliceFrom(start) };
             }
         }
 
-        return Token{ .invalid = self.next() orelse return null };
+        return Token{ .tag = .invalid, .source_span = self.getSliceFrom(start) };
     }
 
     fn chompNumber(self: *Self) !?Token {
-        var str = String.init(self.allocator);
-        errdefer str.deinit();
+        const start = self.index;
 
         if (self.peek(0)) |char| {
             // First symbol should be a character
             if (isDigit(char)) {
                 self.consume(1);
-                try str.append(char);
             } else {
                 return null;
             }
@@ -263,15 +242,17 @@ const Lexer = struct {
         while (self.peek(0)) |char| {
             if (isDigit(char)) {
                 _ = self.next();
-                try str.append(char);
-            } else if (isWhitespace(char) or isArithmeticSymbol(char)) {
+            } else if (isWhitespace(char) or isArithmeticSymbol(char) or isExpressionTerminator(char)) {
                 break;
             } else if (!isWhitespace(char)) {
-                return Token{ .invalid = char };
+                return Token{
+                    .tag = .invalid,
+                    .source_span = self.getSliceFrom(start),
+                };
             }
         }
 
-        return Token{ .number = str };
+        return Token{ .tag = .number, .source_span = self.getSliceFrom(start) };
     }
 
     fn chompWhitespace(self: *Self) ?bool {
@@ -303,8 +284,7 @@ const Lexer = struct {
     }
 
     fn chompAtom(self: *Self) !?Token {
-        var str = String.init(self.allocator);
-        errdefer str.deinit();
+        const start = self.index;
 
         if (self.match('@')) {
             self.consume(1);
@@ -315,24 +295,23 @@ const Lexer = struct {
         while (self.peek(0)) |char| {
             if (isAlphaNumeric(char)) {
                 self.consume(1);
-                try str.append(char);
             } else {
                 break;
             }
         }
 
-        return Token{ .atom = str };
+        const atom = self.getSliceFrom(start);
+
+        return Token{ .tag = .atom, .source_span = atom };
     }
 
     fn chompIdOrKeyword(self: *Self) !?Token {
-        var str = String.init(self.allocator);
-        errdefer str.deinit();
+        const start = self.index;
 
         if (self.peek(0)) |char| {
             // First symbol should be a character
             if (isCharacter(char)) {
                 self.consume(1);
-                try str.append(char);
             } else {
                 return null;
             }
@@ -341,7 +320,6 @@ const Lexer = struct {
         while (self.peek(0)) |char| {
             if (isAlphaNumeric(char)) {
                 self.consume(1);
-                try str.append(char);
             } else {
                 break;
             }
@@ -349,28 +327,30 @@ const Lexer = struct {
 
         const SymbolTokenTuple = struct {
             chars: []const u8,
-            token: Token,
+            token_tag: Token.Tag,
         };
         const tokensSymbols = [_]SymbolTokenTuple{
-            .{ .chars = "let", .token = .let },
-            .{ .chars = "in", .token = .in },
-            .{ .chars = "fn", .token = .lambda },
-            .{ .chars = "match", .token = .match },
-            .{ .chars = "with", .token = .with },
-            .{ .chars = "if", .token = .if_keyword },
-            .{ .chars = "then", .token = .then },
-            .{ .chars = "else", .token = .else_keyword },
-            .{ .chars = "as", .token = .as },
-            .{ .chars = "import", .token = .import },
+            .{ .chars = "let", .token_tag = .let },
+            .{ .chars = "in", .token_tag = .in },
+            .{ .chars = "fn", .token_tag = .lambda },
+            .{ .chars = "match", .token_tag = .match },
+            .{ .chars = "with", .token_tag = .with },
+            .{ .chars = "if", .token_tag = .if_keyword },
+            .{ .chars = "then", .token_tag = .then },
+            .{ .chars = "else", .token_tag = .else_keyword },
+            .{ .chars = "as", .token_tag = .as },
+            .{ .chars = "import", .token_tag = .import },
         };
 
+        const string = self.getSliceFrom(start);
+
         for (tokensSymbols) |sst| {
-            if (str.items.len == sst.chars.len and std.mem.eql(u8, str.items, sst.chars)) {
-                return sst.token;
+            if (string.len == sst.chars.len and std.mem.eql(u8, string, sst.chars)) {
+                return Token{ .tag = sst.token_tag, .source_span = string };
             }
         }
 
-        return Token{ .id = str };
+        return Token{ .tag = .identifier, .source_span = string };
     }
 
     fn isNameStart(char: u8) bool {
@@ -380,6 +360,10 @@ const Lexer = struct {
     fn isNumberStart(char: u8) bool {
         return isDigit(char);
     }
+
+    fn getSliceFrom(self: *const Self, start: usize) []const u8 {
+        return self.source[start..self.index];
+    }
 };
 
 fn isWhitespace(char: u8) bool {
@@ -388,8 +372,13 @@ fn isWhitespace(char: u8) bool {
 }
 
 fn isArithmeticSymbol(char: u8) bool {
-    const WHITESPACE: []const u8 = "+-*/";
-    return isInSlice(u8, char, WHITESPACE);
+    const ARITHMETIC: []const u8 = "+-*/";
+    return isInSlice(u8, char, ARITHMETIC);
+}
+
+fn isExpressionTerminator(char: u8) bool {
+    const TERMINATOR: []const u8 = "();,";
+    return isInSlice(u8, char, TERMINATOR);
 }
 
 fn isAlphaNumeric(char: u8) bool {

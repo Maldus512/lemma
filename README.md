@@ -2,4 +2,4 @@
 
 # TODO
 
- - Separate tokens and their metadata in two arrays 
+ - Use `MultiArrayList`

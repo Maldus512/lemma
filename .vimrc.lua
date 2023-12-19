@@ -2,7 +2,7 @@ local dap = require("dap")
 local overseer = require("overseer")
 local vim = vim
 
-local TEST_BINARY = "./zig-cache/test"
+local TEST_BINARY = "./test"
 
 local debug_test_config = vim.dap.setup_c_configuration(TEST_BINARY)
 

@@ -11,7 +11,7 @@ const Token = imports.lexer.Token;
 test "Identifiers" {
     const ids = [_][]const u8{ "variable_name", "_zebborbio" };
     for (ids) |id| {
-        try checkToken(id, try Token.newId(std.heap.page_allocator, id));
+        try checkToken(id, .identifier);
     }
 }
 
@@ -21,24 +21,24 @@ test "Atoms" {
     for (atoms) |atom| {
         const atom_string = try std.fmt.allocPrint(allocator, "@{s}", .{atom});
         defer allocator.free(atom_string);
-        try checkToken(atom_string, try Token.newAtom(std.heap.page_allocator, atom));
+        try checkToken(atom_string, .atom);
     }
 }
 
 test "Numbers" {
     const numbers = [_][]const u8{ "42", "512" };
     for (numbers) |number| {
-        try checkToken(number, try Token.newNumber(std.heap.page_allocator, number));
+        try checkToken(number, .number);
     }
 }
 
 test "Keywords" {
     const ExpectedToken = struct {
         string: []const u8,
-        token: Token,
+        tag: Token.Tag,
 
-        fn new(string: []const u8, token: Token) @This() {
-            return @This(){ .string = string, .token = token };
+        fn new(string: []const u8, tag: Token.Tag) @This() {
+            return @This(){ .string = string, .tag = tag };
         }
     };
 
@@ -72,23 +72,23 @@ test "Keywords" {
     };
 
     const allocator = std.heap.page_allocator;
-    var total_string: []u8 = "";
+    var source_string: []u8 = "";
     var positions = std.ArrayList(std.meta.Tuple(&.{ usize, usize })).init(allocator);
     defer positions.deinit();
 
     for (expected_tokens) |expected_token| {
         // Isolated test
-        try checkToken(expected_token.string, expected_token.token);
+        try checkToken(expected_token.string, expected_token.tag);
 
-        const new_string = try std.fmt.allocPrint(allocator, "{s} {s}", .{ total_string, expected_token.string });
+        const new_string = try std.fmt.allocPrint(allocator, "{s} {s}", .{ source_string, expected_token.string });
 
-        try positions.append(.{ total_string.len + 1, total_string.len + 1 + expected_token.string.len });
+        try positions.append(.{ source_string.len + 1, source_string.len + 1 + expected_token.string.len });
 
-        allocator.free(total_string);
-        total_string = new_string;
+        allocator.free(source_string);
+        source_string = new_string;
     }
 
-    const result = try imports.lexer.scan(std.heap.page_allocator, total_string);
+    const result = try imports.lexer.scan(std.heap.page_allocator, source_string);
 
     try testing.expectEqual(expected_tokens.len, result.tokens.items.len);
 
@@ -98,29 +98,28 @@ test "Keywords" {
             try testing.expect(false);
             unreachable;
         };
-        const span = result.getTokenPosition(token_index) orelse {
-            try testing.expect(false);
-            unreachable;
-        };
         const expected_position = positions.items[index];
 
-        try testing.expect(expected_token.token.equal(found));
-        try testing.expectEqual(expected_position[0], span.begin);
-        try testing.expectEqual(expected_position[1], span.end);
+        const begin = found.getStartingIndex(source_string);
+
+        try testing.expectEqual(expected_token.tag, found.tag);
+        try testing.expectEqual(expected_position[0], begin);
+        try testing.expectEqual(expected_position[1], begin + found.size());
     }
 }
 
-fn checkToken(source: []const u8, token: Token) !void {
+fn checkToken(source: []const u8, tag: Token.Tag) !void {
     var scan_result = try imports.lexer.scan(std.heap.page_allocator, source);
     try testing.expect(scan_result.tokens.items.len == 1);
 
     if (scan_result.getToken(0)) |found| {
-        if (!found.equal(token)) {
-            std.debug.print("\nExpected {any}, found {any}\n", .{ token, found });
+        if (found.tag != tag) {
+            std.debug.print("\nExpected {any}, found {any}\n", .{ tag, found.tag });
             try testing.expect(false);
         }
+        try testing.expect(std.mem.eql(u8, source, found.source_span));
     } else {
-        std.debug.print("\nToken {any} not found in \"{s}\"", .{ token, source });
+        std.debug.print("\nToken {any} not found in \"{s}\"", .{ tag, source });
         try testing.expect(false);
     }
 }

@@ -8,14 +8,13 @@ const imports = .{
 const Value = imports.common.Value;
 const String = std.ArrayList(u8);
 
-pub const AstNodeList = std.ArrayList(*AstNode);
+pub const NodeList = std.ArrayList(*Node);
 pub const Token = imports.lexer.Token;
 pub const TokenIndex = imports.lexer.TokenIndex;
 pub const SourceSpan = imports.common.meta.SourceSpan;
-pub const AstNodeTagBoundedArray = std.BoundedArray(AstNodeTag, 4);
 
 pub const Operator = enum {
-    sum,
+    addition,
     subtraction,
     multiplication,
     division,
@@ -24,9 +23,9 @@ pub const Operator = enum {
 
     const Self = @This();
 
-    pub fn fromToken(token: Token) ?Self {
-        return switch (token) {
-            .plus => .sum,
+    pub fn fromTokenTag(token_tag: Token.Tag) ?Self {
+        return switch (token_tag) {
+            .plus => .addition,
             .minus => .subtraction,
             .star => .multiplication,
             .slash => .division,
@@ -36,29 +35,41 @@ pub const Operator = enum {
     }
 };
 
-pub const AstNodeTag = enum {
-    number,
-    operation,
-
-    invalid,
-};
-
-pub const AstNode = union(AstNodeTag) {
-    number: i64,
-    operation: struct {
-        lhs: *AstNode,
-        operator: Operator,
-        rhs: *AstNode,
+pub const Node = struct {
+    token: TokenIndex,
+    tag: Tag,
+    data: union {
+        operation: struct {
+            lhs: *Node,
+            rhs: *Node,
+        },
+        function: struct {
+            arguments: NodeList,
+            body: *Node,
+        },
+        //TODO: add expected_instead
+        invalid: struct {
+            while_parsing: TagBoundedArray,
+            valid_nodes: NodeList,
+        },
     },
-    //TODO: add expected_instead
-    invalid: struct {
-        while_parsing: AstNodeTagBoundedArray,
-        valid_nodes: AstNodeList,
-    },
+
+    pub const Tag = enum {
+        number,
+        operation,
+        pattern,
+        function,
+        identifier,
+
+        invalid,
+    };
+
+    const TagBoundedArray = std.BoundedArray(Tag, 4);
 
     const Self = @This();
 
-    pub fn is(self: *const Self, tag: AstNodeTag) bool {
-        return @as(AstNodeTag, self.*) == tag;
+    pub fn invalidFromSlice(token: TokenIndex, valid_nodes: NodeList, while_parsing: []const Tag) !Self {
+        var while_parsing_array = try TagBoundedArray.fromSlice(while_parsing);
+        return Self{ .token = token, .tag = .invalid, .data = .{ .invalid = .{ .while_parsing = while_parsing_array, .valid_nodes = valid_nodes } } };
     }
 };
