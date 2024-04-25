@@ -8,50 +8,63 @@ const imports = .{
 
 pub const AstNodeTag = imports.ast.Node.Tag;
 
-const String = std.ArrayList(u8);
 const Allocator = std.mem.Allocator;
-const SourceSpan = imports.common.meta.SourceSpan;
 const ScanResult = imports.lexer.ScanResult;
 const ScanResultIterator = imports.lexer.ScanResultIterator;
-const AstNodeList = imports.ast.NodeList;
+const AstNodeIndexList = imports.ast.NodeIndexList;
 const AstNode = imports.ast.Node;
+const AstNodeIndex = imports.ast.NodeIndex;
+const AstNodeList = std.ArrayList(AstNode);
 const Operator = imports.ast.Operator;
 const Token = imports.lexer.Token;
-const Value = imports.common.Value;
 const TokenIndex = imports.lexer.TokenIndex;
 
 const Error = error{ OutOfMemory, Overflow };
 
 pub const ParseResult = struct {
     scan_result: ScanResult,
-    ast: *AstNode,
+    root: AstNodeIndex,
+    node_list: AstNodeList,
 
     const Self = @This();
 
-    pub fn getNumberValue(self: *const Self, node: *const AstNode) isize {
-        switch (node.data) {
-            .number => |token_index| {
-                const token = self.scan_result.tokens.items[token_index];
+    pub fn getNumberValue(self: *const Self, index: AstNodeIndex) isize {
+        const node = self.getNode(index);
+        switch (node.tag) {
+            .number => {
+                const token = self.scan_result.tokens.items[node.token];
                 return std.fmt.parseInt(isize, token.source_span, 0) catch unreachable;
             },
             else => unreachable,
         }
     }
 
-    pub fn getSourceSlice(self: *const Self, node: *const AstNode) []const u8 {
+    pub fn getSourceSlice(self: *const Self, index: AstNodeIndex) []const u8 {
+        const node = self.getNode(index);
         const token = self.scan_result.tokens.items[node.token];
         return token.source_span;
+    }
+
+    pub fn getNode(self: *const Self, index: AstNodeIndex) *const AstNode {
+        return &self.node_list.items[index];
+    }
+
+    pub fn getRoot(self: *const Self) *const AstNode {
+        return &self.node_list.items[self.root];
     }
 };
 
 pub fn parse(gpa: Allocator, source: []const u8) !ParseResult {
     const scan_result = try imports.lexer.scan(gpa, source);
+    const node_list = AstNodeList.init(gpa);
 
-    var parser = Parser{ .gpa = gpa, .token_iterator = scan_result.intoIter() };
+    var parser = Parser{ .gpa = gpa, .token_iterator = scan_result.intoIter(), .node_list = node_list };
+    const root = try parser.parse();
 
     return ParseResult{
         .scan_result = scan_result,
-        .ast = try parser.parse(),
+        .root = root,
+        .node_list = parser.node_list,
     };
 }
 
@@ -59,10 +72,11 @@ const Parser = struct {
     //TODO: save errors in a list for ease of access
     gpa: Allocator,
     token_iterator: ScanResultIterator,
+    node_list: AstNodeList,
 
     const Self = @This();
 
-    fn parse(self: *Self) !*AstNode {
+    fn parse(self: *Self) !AstNodeIndex {
         return self.parseExpression();
     }
 
@@ -77,14 +91,14 @@ const Parser = struct {
         };
     }
 
-    fn parseExpression(self: *Self) Error!*AstNode {
+    fn parseExpression(self: *Self) Error!AstNodeIndex {
         switch (self.token_iterator.peek(0).tag) {
             .lambda => return self.parseFunction(),
             else => return self.parseInfixExpression(0),
         }
     }
 
-    fn parseFunction(self: *Self) Error!*AstNode {
+    fn parseFunction(self: *Self) Error!AstNodeIndex {
         const index = self.token_iterator.at();
 
         if (self.expectToken(.lambda) == null) {
@@ -93,7 +107,7 @@ const Parser = struct {
 
         //TODO: polymorphic variables
 
-        var arguments = AstNodeList.init(self.gpa);
+        var arguments = AstNodeIndexList.init(self.gpa);
         errdefer arguments.deinit();
 
         while (!self.atToken(.double_arrow)) {
@@ -114,17 +128,17 @@ const Parser = struct {
         });
     }
 
-    fn parsePattern(self: *Self) Error!*AstNode {
+    fn parsePattern(self: *Self) Error!AstNodeIndex {
         const index = self.token_iterator.at();
 
         if (self.expectToken(.identifier)) |_| {
-            return try self.allocateAstNode(AstNode{ .token = index, .tag = .pattern, .data = undefined });
+            return try self.allocateAstNode(AstNode{ .token = index, .tag = .binding, .data = undefined });
         } else {
-            return try self.allocateInvalid(index, &.{.pattern}, &.{});
+            return try self.allocateInvalid(index, &.{.binding}, &.{});
         }
     }
 
-    fn parseInfixExpression(self: *Self, min_bp: u16) Error!*AstNode {
+    fn parseInfixExpression(self: *Self, min_bp: u16) Error!AstNodeIndex {
         // Pratt parser
 
         var left_hand_side = try self.parseAtom();
@@ -154,6 +168,7 @@ const Parser = struct {
                         .token = index,
                         .tag = .operation,
                         .data = .{ .operation = .{
+                            .operator = operator,
                             .lhs = left_hand_side,
                             .rhs = right_hand_side,
                         } },
@@ -167,7 +182,7 @@ const Parser = struct {
         return left_hand_side;
     }
 
-    fn parseAtom(self: *Self) Error!*AstNode {
+    fn parseAtom(self: *Self) Error!AstNodeIndex {
         const index = self.token_iterator.at();
         const token = self.token_iterator.next();
 
@@ -190,17 +205,17 @@ const Parser = struct {
         }
     }
 
-    fn allocateInvalid(self: *const Self, index: TokenIndex, while_parsing: []const AstNodeTag, valid_nodes: []const *AstNode) Error!*AstNode {
-        var valid_nodes_list = AstNodeList.init(self.gpa);
+    fn allocateInvalid(self: *Self, index: TokenIndex, while_parsing: []const AstNodeTag, valid_nodes: []const AstNodeIndex) Error!AstNodeIndex {
+        var valid_nodes_list = AstNodeIndexList.init(self.gpa);
         try valid_nodes_list.appendSlice(valid_nodes);
 
         return self.allocateAstNode(try AstNode.invalidFromSlice(index, valid_nodes_list, while_parsing));
     }
 
-    fn allocateAstNode(self: *const Self, node: AstNode) !*AstNode {
-        var result = try self.gpa.create(AstNode);
-        result.* = node;
-        return result;
+    fn allocateAstNode(self: *Self, node: AstNode) !AstNodeIndex {
+        const index = self.node_list.items.len;
+        try self.node_list.append(node);
+        return @intCast(AstNodeIndex, index);
     }
 
     fn isAtexpressionTerminator(self: *const Self) bool {

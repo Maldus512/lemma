@@ -5,13 +5,10 @@ const imports = .{
     .common = @import("../common/common.zig"),
 };
 
-const Value = imports.common.Value;
-const String = std.ArrayList(u8);
-
-pub const NodeList = std.ArrayList(*Node);
+pub const NodeIndexList = std.ArrayList(NodeIndex);
 pub const Token = imports.lexer.Token;
 pub const TokenIndex = imports.lexer.TokenIndex;
-pub const SourceSpan = imports.common.meta.SourceSpan;
+pub const NodeIndex = u32;
 
 pub const Operator = enum {
     addition,
@@ -40,26 +37,27 @@ pub const Node = struct {
     tag: Tag,
     data: union {
         operation: struct {
-            lhs: *Node,
-            rhs: *Node,
+            operator: Operator,
+            lhs: NodeIndex,
+            rhs: NodeIndex,
         },
         function: struct {
-            arguments: NodeList,
-            body: *Node,
+            arguments: NodeIndexList,
+            body: NodeIndex,
         },
         //TODO: add expected_instead
         invalid: struct {
             while_parsing: TagBoundedArray,
-            valid_nodes: NodeList,
+            valid_nodes: NodeIndexList,
         },
     },
 
     pub const Tag = enum {
         number,
-        operation,
-        pattern,
-        function,
         identifier,
+        binding,
+        function,
+        operation, // binary operation
 
         invalid,
     };
@@ -68,7 +66,7 @@ pub const Node = struct {
 
     const Self = @This();
 
-    pub fn invalidFromSlice(token: TokenIndex, valid_nodes: NodeList, while_parsing: []const Tag) !Self {
+    pub fn invalidFromSlice(token: TokenIndex, valid_nodes: NodeIndexList, while_parsing: []const Tag) !Self {
         var while_parsing_array = try TagBoundedArray.fromSlice(while_parsing);
         return Self{ .token = token, .tag = .invalid, .data = .{ .invalid = .{ .while_parsing = while_parsing_array, .valid_nodes = valid_nodes } } };
     }
