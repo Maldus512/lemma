@@ -255,3 +255,15 @@ test "Applications" {
         });
     }
 }
+
+test "Let In" {
+    const allocator = std.heap.page_allocator;
+
+    {
+        const identity = "let x in x";
+        const result = try imports.parser.parse(allocator, identity);
+
+        const root = result.getRoot();
+        try testing.expectEqual(root.tag, .letin);
+    }
+}

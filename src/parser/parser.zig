@@ -128,6 +128,17 @@ const Parser = struct {
         });
     }
 
+    fn parseLetIn(self: *Self) Error!AstNodeIndex {
+        const index = self.token_iterator.at();
+
+        if (self.expectToken(.let) == null) {
+            return self.allocateInvalid(index, &.{.letin}, &.{});
+        }
+    }
+
+    fn parseAssignment(self: *Self) Error!AstNodeIndex {
+    }
+
     fn parsePattern(self: *Self) Error!AstNodeIndex {
         const index = self.token_iterator.at();
 

@@ -212,6 +212,7 @@ const Sema = struct {
                     else => unreachable,
                 }
             },
+            .letin => unreachable,
             .invalid => return self.allocateInvalid(),
         }
     }

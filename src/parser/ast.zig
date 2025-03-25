@@ -45,6 +45,10 @@ pub const Node = struct {
             arguments: NodeIndexList,
             body: NodeIndex,
         },
+        assignment: struct {
+            binding: NodeIndex,
+            value: NodeIndex,
+        },
         //TODO: add expected_instead
         invalid: struct {
             while_parsing: TagBoundedArray,
@@ -57,6 +61,8 @@ pub const Node = struct {
         identifier,
         binding,
         function,
+        letin,
+        assignment,
         operation, // binary operation
 
         invalid,
