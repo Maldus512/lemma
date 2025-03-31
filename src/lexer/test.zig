@@ -1,6 +1,5 @@
 const std = @import("std");
 const testing = std.testing;
-const Allocator = std.mem.Allocator;
 
 const imports = .{
     .lexer = @import("lexer.zig"),
@@ -16,7 +15,7 @@ test "Identifiers" {
 }
 
 test "Atoms" {
-    const allocator = std.heap.page_allocator;
+    const allocator = testing.allocator;
     const atoms = [_][]const u8{ "Banana", "Zebborbio" };
     for (atoms) |atom| {
         const atom_string = try std.fmt.allocPrint(allocator, "@{s}", .{atom});
@@ -71,7 +70,7 @@ test "Keywords" {
         ExpectedToken.new("|>", .pipe),
     };
 
-    const allocator = std.heap.page_allocator;
+    const allocator = testing.allocator;
     var source_string: []u8 = "";
     var positions = std.ArrayList(std.meta.Tuple(&.{ usize, usize })).init(allocator);
     defer positions.deinit();
@@ -87,13 +86,15 @@ test "Keywords" {
         allocator.free(source_string);
         source_string = new_string;
     }
+    defer allocator.free(source_string);
 
-    const result = try imports.lexer.scan(std.heap.page_allocator, source_string);
+    const result = try imports.lexer.scan(allocator, source_string);
+    defer result.deinit();
 
     try testing.expectEqual(expected_tokens.len, result.tokens.items.len);
 
     for (expected_tokens, 0..) |expected_token, index| {
-        const token_index = @intCast(u32, index);
+        const token_index: u32 = @intCast(index);
         const found = result.getToken(token_index) orelse {
             try testing.expect(false);
             unreachable;
@@ -109,7 +110,8 @@ test "Keywords" {
 }
 
 fn checkToken(source: []const u8, tag: Token.Tag) !void {
-    var scan_result = try imports.lexer.scan(std.heap.page_allocator, source);
+    var scan_result = try imports.lexer.scan(testing.allocator, source);
+    defer scan_result.deinit();
     try testing.expect(scan_result.tokens.items.len == 1);
 
     if (scan_result.getToken(0)) |found| {

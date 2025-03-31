@@ -21,13 +21,18 @@ const TokenIndex = imports.lexer.TokenIndex;
 
 const Error = error{ OutOfMemory, Overflow };
 
+/// Parse result
 pub const ParseResult = struct {
+    /// Reference to the original scan result
     scan_result: ScanResult,
+    /// Abstract Syntax Tree root
     root: AstNodeIndex,
+    /// Storage list for the AST
     node_list: AstNodeList,
 
     const Self = @This();
 
+    /// Get the number of valid numerical node
     pub fn getNumberValue(self: *const Self, index: AstNodeIndex) isize {
         const node = self.getNode(index);
         switch (node.tag) {
@@ -52,8 +57,18 @@ pub const ParseResult = struct {
     pub fn getRoot(self: *const Self) *const AstNode {
         return &self.node_list.items[self.root];
     }
+
+    /// Deinitialize
+    pub fn deinit(self: *const Self) void {
+        self.scan_result.deinit();
+        for (self.node_list.items) |node| {
+            node.deinit();
+        }
+        self.node_list.deinit();
+    }
 };
 
+/// Parse a source text into an AST
 pub fn parse(gpa: Allocator, source: []const u8) !ParseResult {
     const scan_result = try imports.lexer.scan(gpa, source);
     const node_list = AstNodeList.init(gpa);
@@ -82,7 +97,7 @@ const Parser = struct {
 
     const BindingPower = std.meta.Tuple(&.{ u16, u16 });
 
-    fn infix_binding_power(op: Operator) BindingPower {
+    fn getInfixBindingPower(op: Operator) BindingPower {
         return switch (op) {
             .forwarding => .{ 1, 2 },
             .addition, .subtraction => .{ 3, 4 },
@@ -137,6 +152,7 @@ const Parser = struct {
     }
 
     fn parseAssignment(self: *Self) Error!AstNodeIndex {
+        _ = self;
     }
 
     fn parsePattern(self: *Self) Error!AstNodeIndex {
@@ -155,7 +171,7 @@ const Parser = struct {
         var left_hand_side = try self.parseAtom();
 
         while (true) {
-            var maybe_operator: ?Operator = if (Operator.fromTokenTag(self.token_iterator.peek(0).tag)) |explicit_operator|
+            const maybe_operator: ?Operator = if (Operator.fromTokenTag(self.token_iterator.peek(0).tag)) |explicit_operator|
                 explicit_operator
             else if (!self.isAtexpressionTerminator())
                 .application
@@ -163,7 +179,7 @@ const Parser = struct {
                 null;
 
             if (maybe_operator) |operator| {
-                const bp = infix_binding_power(operator);
+                const bp = getInfixBindingPower(operator);
 
                 if (bp[0] < min_bp) {
                     break;
@@ -226,7 +242,7 @@ const Parser = struct {
     fn allocateAstNode(self: *Self, node: AstNode) !AstNodeIndex {
         const index = self.node_list.items.len;
         try self.node_list.append(node);
-        return @intCast(AstNodeIndex, index);
+        return @intCast(index);
     }
 
     fn isAtexpressionTerminator(self: *const Self) bool {

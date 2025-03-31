@@ -56,15 +56,18 @@ pub const Token = struct {
     };
 
     tag: Tag,
+    // Span of character in the original source
     source_span: []const u8,
 
     const Self = @This();
 
+    /// Returns the character length of the token
     pub fn size(self: *const Self) usize {
         return self.source_span.len;
     }
 
+    /// Returns starting index of the token in the source text
     pub fn getStartingIndex(self: *const Self, source: []const u8) usize {
-        return @ptrToInt(self.source_span.ptr) - @ptrToInt(source.ptr);
+        return @intFromPtr(self.source_span.ptr) - @intFromPtr(source.ptr);
     }
 };

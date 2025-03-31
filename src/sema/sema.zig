@@ -55,6 +55,16 @@ pub const Result = struct {
     pub fn displayType(self: *const Self, allocator: Allocator, index: TypeIndex) ![]const u8 {
         return Type.show(allocator, &self.type_list, index);
     }
+
+    /// Deinitialize
+    pub fn deinit(self: *const Self) void {
+        self.constraints.deinit();
+        for (self.node_list.items) |node| {
+            node.deinit();
+        }
+        self.node_list.deinit();
+        self.type_list.deinit();
+    }
 };
 
 pub fn analyze(gpa: Allocator, source: []const u8) !Result {
@@ -72,6 +82,10 @@ pub fn analyze(gpa: Allocator, source: []const u8) !Result {
     };
 
     const root = try sema.analyze();
+    parse_result.deinit();
+
+    sema.mfset.nodes.deinit();
+    sema.env.deinit();
 
     return Result{
         .root = root,
@@ -96,9 +110,7 @@ const Sema = struct {
         const node_index = try self.ast_to_it(self.ast.root);
 
         self.unify();
-        std.log.warn("Normalizing {s}", .{
-            Type.show(std.heap.page_allocator, &self.mfset.type_list, self.getNode(node_index).inferred_type) catch unreachable,
-        });
+        //std.log.warn("Normalizing {s}", .{ Type.show(std.heap.page_allocator, &self.mfset.type_list, self.getNode(node_index).inferred_type) catch unreachable, });
         self.mfset.normalizeType(self.getNode(node_index).inferred_type);
 
         return node_index;
@@ -106,10 +118,10 @@ const Sema = struct {
 
     fn unify(self: *Self) void {
         for (self.constraints.items) |constraint| {
-            std.log.warn("constraint {s} == {s}", .{
-                Type.show(std.heap.page_allocator, &self.mfset.type_list, constraint[0]) catch unreachable,
-                Type.show(std.heap.page_allocator, &self.mfset.type_list, constraint[1]) catch unreachable,
-            });
+            //std.log.warn("constraint {s} == {s}", .{
+            //    Type.show(std.heap.page_allocator, &self.mfset.type_list, constraint[0]) catch unreachable,
+            //    Type.show(std.heap.page_allocator, &self.mfset.type_list, constraint[1]) catch unreachable,
+            //});
             self.unifyTypeType(constraint[0], constraint[1]);
         }
     }
@@ -213,6 +225,7 @@ const Sema = struct {
                 }
             },
             .letin => unreachable,
+            .assignment => unreachable,
             .invalid => return self.allocateInvalid(),
         }
     }
@@ -237,7 +250,7 @@ const Sema = struct {
     fn allocateNode(self: *Self, node: IrtNode) !IrtNodeIndex {
         const index = self.node_list.items.len;
         try self.node_list.append(node);
-        return @intCast(IrtNodeIndex, index);
+        return @intCast(index);
     }
 
     fn allocateNumber(self: *Self, value: isize) !IrtNodeIndex {

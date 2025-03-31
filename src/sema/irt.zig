@@ -55,6 +55,18 @@ pub const Node = struct {
     };
 
     const Self = @This();
+
+    pub fn deinit(self: *const Self) void {
+        switch (self.tag) {
+            .function => {
+                self.data.function.arguments.deinit();
+            },
+            .application => {
+                self.data.application.arguments.deinit();
+            },
+            else => {},
+        }
+    }
 };
 
 pub const Type = union(enum) {
@@ -89,11 +101,13 @@ pub const Type = union(enum) {
                 const max = 'z' - 'a';
 
                 while (character > max) {
-                    result = try fmt.allocPrint(allocator, "{s}{c}", .{ result, 'a' + @intCast(u8, character % max) });
+                    allocator.free(result);
+                    result = try fmt.allocPrint(allocator, "{s}{c}", .{ result, 'a' + @as(u8, @intCast(character % max)) });
                     character -= max;
                 }
+                defer allocator.free(result);
 
-                return fmt.allocPrint(allocator, "{s}{c}", .{ result, 'a' + @intCast(u8, character) });
+                return fmt.allocPrint(allocator, "{s}{c}", .{ result, 'a' + @as(u8, @intCast(character)) });
             },
             .arrow => |arrow| {
                 const argument = type_list.items[arrow.argument];
@@ -101,6 +115,9 @@ pub const Type = union(enum) {
 
                 const argument_show = try Type.showNormalized(allocator, type_list, arrow.argument, next_variable_base);
                 const result_show = try Type.showNormalized(allocator, type_list, arrow.result, next_variable_base);
+                defer allocator.free(argument_show);
+                defer allocator.free(result_show);
+
                 if (argument == .arrow) {
                     return fmt.allocPrint(allocator, "({s})->{s}", .{ argument_show, result_show });
                 } else {

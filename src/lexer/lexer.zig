@@ -17,12 +17,17 @@ const SourceSpan = imports.meta.SourceSpan;
 pub const Token = imports.token.Token;
 pub const TokenIndex = usize;
 
+/// Result of the scanning procedure
 pub const ScanResult = struct {
+    /// Reference to the source code
     source: []const u8,
+
+    /// Token list
     tokens: TokenList,
 
     const Self = @This();
 
+    /// Get a token from the list
     pub fn getToken(self: *const Self, index: TokenIndex) ?Token {
         if (index >= self.tokens.items.len) {
             return null;
@@ -31,15 +36,18 @@ pub const ScanResult = struct {
         }
     }
 
+    /// Transform this result into a token iterator
     pub fn intoIter(self: *const Self) ScanResultIterator {
         return ScanResultIterator{ .scan_result = self, .next_token = 0 };
     }
 
-    pub fn deinit(self: *Self) void {
+    /// Deinitialize
+    pub fn deinit(self: *const Self) void {
         self.tokens.deinit();
     }
 };
 
+/// Iterator struct for the token list
 pub const ScanResultIterator = struct {
     scan_result: *const ScanResult,
     next_token: TokenIndex,

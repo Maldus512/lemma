@@ -23,9 +23,9 @@ pub const MergeFindSet = struct {
     pub fn init(allocator: Allocator) !Self {
         var type_list = TypeList.init(allocator);
 
-        const number_type_index = @intCast(TypeIndex, type_list.items.len);
+        const number_type_index: TypeIndex = @intCast(type_list.items.len);
         try type_list.append(.number);
-        const invalid_type_index = @intCast(TypeIndex, type_list.items.len);
+        const invalid_type_index: TypeIndex = @intCast(type_list.items.len);
         try type_list.append(.invalid);
 
         return Self{
@@ -42,7 +42,7 @@ pub const MergeFindSet = struct {
     }
 
     pub fn makeNew(self: *Self) !TypeIndex {
-        const type_variable = @intCast(TypeVariable, self.nodes.items.len);
+        const type_variable: TypeVariable = @intCast(self.nodes.items.len);
         const type_index = try self.allocateType(Type{ .variable = type_variable });
 
         try self.nodes.append(Node{
@@ -141,10 +141,10 @@ pub const MergeFindSet = struct {
             },
             .variable => |variable| {
                 if (self.findType(variable)) |new_type_index| {
-                    std.log.warn("Assigning var {s} to {s}", .{
-                        Type.show(std.heap.page_allocator, &self.type_list, type_index) catch unreachable,
-                        Type.show(std.heap.page_allocator, &self.type_list, new_type_index) catch unreachable,
-                    });
+                    //std.log.warn("Assigning var {s} to {s}", .{
+                    //    Type.show(std.heap.page_allocator, &self.type_list, type_index) catch unreachable,
+                    //    Type.show(std.heap.page_allocator, &self.type_list, new_type_index) catch unreachable,
+                    //});
                     self.normalizeType(new_type_index);
                     self.type_list.items[type_index] = self.getType(new_type_index).*;
                 }
@@ -161,7 +161,7 @@ pub const MergeFindSet = struct {
         } else {
             const index = self.type_list.items.len;
             try self.type_list.append(ltype);
-            return @intCast(TypeIndex, index);
+            return @intCast(index);
         }
     }
 

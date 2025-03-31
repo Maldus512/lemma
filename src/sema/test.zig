@@ -11,65 +11,82 @@ const ItNode = imports.irt.Node;
 const SemaResult = imports.sema.Result;
 
 test "Values" {
-    const allocator = std.heap.page_allocator;
+    const allocator = testing.allocator;
 
     {
         const source = "1";
         const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
 
         const root = result.getRoot();
         try testing.expectEqual(root.tag, .number);
         try testing.expectEqual(root.data.number, 1);
 
-        try testing.expectEqualStrings("Num", try result.displayType(allocator, result.root));
+        const string = try result.displayType(allocator, result.root);
+        defer allocator.free(string);
+        try testing.expectEqualStrings("Num", string);
     }
 }
 
 test "MergeFindSet" {}
 
 test "Identifiers" {
-    const allocator = std.heap.page_allocator;
+    const allocator = testing.allocator;
 
     {
         const source = "x";
         const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
 
         const root = result.getRoot();
         try testing.expectEqual(root.tag, .freeIdentifier);
-        try testing.expectEqualStrings(try result.displayType(allocator, result.getNodeTypeIndex(result.root)), "BOTTOM"); // It's a free identifier, it has an invalid type
+
+        const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));
+        defer allocator.free(string);
+
+        try testing.expectEqualStrings(string, "BOTTOM"); // It's a free identifier, it has an invalid type
     }
 
     {
         const source = "fn x => x";
         const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
 
         const root = result.getRoot();
         try testing.expectEqual(root.tag, .function);
         try testing.expectEqual(root.data.function.arguments.items.len, 1);
         try testing.expectEqual(result.getNode(root.data.function.body).tag, .boundIdentifier);
 
-        try testing.expectEqualStrings(try result.displayType(allocator, result.getNodeTypeIndex(result.root)), "a->a");
+        const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));
+        defer allocator.free(string);
+
+        try testing.expectEqualStrings(string, "a->a");
     }
 
     {
         const source = "fn x y => x";
         const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
 
         const root = result.getRoot();
         try testing.expectEqual(root.tag, .function);
         try testing.expectEqual(root.data.function.arguments.items.len, 2);
         try testing.expectEqual(result.getNode(root.data.function.body).tag, .boundIdentifier);
 
-        try testing.expectEqualStrings(try result.displayType(allocator, result.getNodeTypeIndex(result.root)), "a->b->a");
+        const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));
+        defer allocator.free(string);
+
+        try testing.expectEqualStrings(string, "a->b->a");
     }
 }
 
 test "Application" {
-    const allocator = std.heap.page_allocator;
+    const allocator = testing.allocator;
 
     {
         const source = "foo x y z";
         const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
 
         const root = result.getRoot();
         try testing.expectEqual(root.tag, .application);
@@ -78,26 +95,27 @@ test "Application" {
 }
 
 test "Type inference" {
-    const allocator = std.heap.page_allocator;
+    const allocator = testing.allocator;
 
     {
-        std.log.warn("Simple arrow\n", .{});
         const source = "fn x y => x y";
         const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
 
-        try testing.expectEqualStrings("(b->c)->b->c", try result.displayType(allocator, result.getNodeTypeIndex(result.root)));
+        const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));
+        defer allocator.free(string);
+
+        try testing.expectEqualStrings("(b->c)->b->c", string);
     }
 
     {
         const source = "fn x y z => x y z";
-        std.log.warn("Complex foo\n", .{});
         const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
 
-        //try testing.expectEqualStrings(try result.displayType(allocator, result.getNodeTypeIndex(result.root)), "a->b->c->d->e");
+        const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));
+        defer allocator.free(string);
 
-        std.log.warn("{s}\n", .{try result.displayType(allocator, result.getNodeTypeIndex(result.root))});
-        for (result.constraints.items) |constraint| {
-            std.log.warn("{s} = {s}\n", .{ try result.displayType(allocator, constraint[0]), try result.displayType(allocator, constraint[1]) });
-        }
+        try testing.expectEqualStrings(string, "(b->c->e)->b->c->e");
     }
 }
