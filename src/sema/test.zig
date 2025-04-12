@@ -80,6 +80,43 @@ test "Identifiers" {
     }
 }
 
+test "Builtin" {
+    const allocator = testing.allocator;
+
+    {
+        const source = "x + y";
+        const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
+
+        const root = result.getRoot();
+        try testing.expectEqual(root.tag, .builtin);
+        try testing.expectEqual(root.data.builtin.operation, .addition);
+
+        {
+            const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));
+            defer allocator.free(string);
+
+            try testing.expectEqualStrings("Num", string);
+        }
+
+        {
+            const lhs = result.getNode(root.data.builtin.arguments.items[0]);
+            const string = try result.displayType(allocator, result.getNodeTypeIndex(lhs.inferred_type));
+            defer allocator.free(string);
+
+            try testing.expectEqualStrings("Num", string);
+        }
+
+        {
+            const rhs = result.getNode(root.data.builtin.arguments.items[0]);
+            const string = try result.displayType(allocator, result.getNodeTypeIndex(rhs.inferred_type));
+            defer allocator.free(string);
+
+            try testing.expectEqualStrings("Num", string);
+        }
+    }
+}
+
 test "Application" {
     const allocator = testing.allocator;
 
@@ -91,6 +128,16 @@ test "Application" {
         const root = result.getRoot();
         try testing.expectEqual(root.tag, .application);
         try testing.expectEqual(root.data.application.arguments.items.len, 3);
+    }
+
+    {
+        const source = "x |> foo";
+        const result = try imports.sema.analyze(allocator, source);
+        defer result.deinit();
+
+        const root = result.getRoot();
+        try testing.expectEqual(root.tag, .application);
+        try testing.expectEqual(root.data.application.arguments.items.len, 1);
     }
 }
 

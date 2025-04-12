@@ -187,8 +187,8 @@ test "Applications" {
     const allocator = testing.allocator;
 
     {
-        const self_application = "x y";
-        const result = try imports.parser.parse(allocator, self_application);
+        const source = "x y";
+        const result = try imports.parser.parse(allocator, source);
         defer result.deinit();
 
         try expectAstBranch(&result, result.root, &.{
@@ -203,8 +203,24 @@ test "Applications" {
     }
 
     {
-        const self_application = "foo x y z";
-        const result = try imports.parser.parse(allocator, self_application);
+        const source = "x |> y";
+        const result = try imports.parser.parse(allocator, source);
+        defer result.deinit();
+
+        try expectAstBranch(&result, result.root, &.{
+            .{ .operation, "|>", "lhs" },
+            .{ .identifier, "x", null },
+        });
+
+        try expectAstBranch(&result, result.root, &.{
+            .{ .operation, "|>", "rhs" },
+            .{ .identifier, "y", null },
+        });
+    }
+
+    {
+        const source = "foo x y z";
+        const result = try imports.parser.parse(allocator, source);
         defer result.deinit();
 
         try expectAstBranch(&result, result.root, &.{

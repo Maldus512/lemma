@@ -12,6 +12,7 @@ const imports = .{
 const Allocator = std.mem.Allocator;
 const AstNode = imports.ast.Node;
 const AstNodeIndex = imports.ast.NodeIndex;
+const BuiltinOperation = imports.irt.BuiltinOperation;
 const IrtNodeIndex = imports.irt.NodeIndex;
 const IrtNodeIndexList = imports.irt.NodeIndexList;
 const IrtNode = imports.irt.Node;
@@ -69,17 +70,8 @@ pub const Result = struct {
 
 pub fn analyze(gpa: Allocator, source: []const u8) !Result {
     const parse_result = try imports.parser.parse(gpa, source);
-    const node_list = IrtNodeList.init(gpa);
-    const mfset = try MergeFindSet.init(gpa);
 
-    var sema = Sema{
-        .gpa = gpa,
-        .mfset = mfset,
-        .ast = parse_result,
-        .node_list = node_list,
-        .env = Environment.init(gpa),
-        .constraints = Constraints.init(gpa),
-    };
+    var sema = try Sema.new(gpa, parse_result);
 
     const root = try sema.analyze();
     parse_result.deinit();
@@ -105,6 +97,20 @@ const Sema = struct {
     constraints: Constraints,
 
     const Self = @This();
+
+    fn new(gpa: Allocator, parse_result: ParseResult) !Self {
+        const mfset = try MergeFindSet.init(gpa);
+        const node_list = IrtNodeList.init(gpa);
+
+        return Sema{
+            .gpa = gpa,
+            .mfset = mfset,
+            .ast = parse_result,
+            .node_list = node_list,
+            .env = Environment.init(gpa),
+            .constraints = Constraints.init(gpa),
+        };
+    }
 
     fn analyze(self: *Self) !IrtNodeIndex {
         const node_index = try self.ast_to_it(self.ast.root);
@@ -221,7 +227,21 @@ const Sema = struct {
 
                         return self.allocateApplication(function, arguments);
                     },
-                    else => unreachable,
+                    .forwarding => {
+                        var arguments = IrtNodeIndexList.init(self.gpa);
+                        try arguments.append(try self.ast_to_it(ast_node.data.operation.lhs));
+
+                        const function = try self.ast_to_it(ast_node.data.operation.rhs);
+
+                        return self.allocateApplication(function, arguments);
+                    },
+                    .addition, .subtraction, .multiplication, .division => {
+                        return self.allocateBuiltin(
+                            BuiltinOperation.fromAstOperator(ast_node.data.operation.operator) orelse unreachable,
+                            ast_node.data.operation.lhs,
+                            ast_node.data.operation.rhs,
+                        );
+                    },
                 }
             },
             .letin => unreachable,
@@ -230,6 +250,7 @@ const Sema = struct {
         }
     }
 
+    /// Create a symbol binding and add it to the new environment (shadowing eventual omonyms)
     fn addItemToEnvironment(self: *Self, shadow_map: *Environment, new_map: *Environment, item: AstNodeIndex) !IrtNodeIndex {
         const ast_node = self.ast.getNode(item);
 
@@ -351,6 +372,21 @@ const Sema = struct {
                 .arguments = arguments,
             } },
             .inferred_type = final_type,
+        });
+    }
+
+    fn allocateBuiltin(self: *Self, operation: BuiltinOperation, lhs: IrtNodeIndex, rhs: IrtNodeIndex) !IrtNodeIndex {
+        var arguments = IrtNodeIndexList.init(self.gpa);
+        try arguments.append(lhs);
+        try arguments.append(rhs);
+
+        return self.allocateNode(IrtNode{
+            .tag = .builtin,
+            .data = .{ .builtin = .{
+                .operation = operation,
+                .arguments = arguments,
+            } },
+            .inferred_type = self.mfset.number_type_index,
         });
     }
 

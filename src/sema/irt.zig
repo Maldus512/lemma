@@ -2,6 +2,7 @@ const std = @import("std");
 
 const imports = .{
     .lexer = @import("../lexer/lexer.zig"),
+    .ast = @import("../parser/ast.zig"),
     .parser = @import("../parser/parser.zig"),
     .common = @import("../common/common.zig"),
 };
@@ -13,12 +14,25 @@ pub const TokenIndex = imports.lexer.TokenIndex;
 pub const TypeVariable = u32;
 pub const NodeIndex = u32;
 pub const TypeIndex = u32;
+pub const AstOperator = imports.ast.Operator;
 
 pub const BuiltinOperation = enum {
     addition,
     subtraction,
     multiplication,
     division,
+
+    const Self = @This();
+
+    pub fn fromAstOperator(tag: AstOperator) ?Self {
+        return switch (tag) {
+            .addition => .addition,
+            .subtraction => .subtraction,
+            .multiplication => .multiplication,
+            .division => .division,
+            else => null,
+        };
+    }
 };
 
 pub const Node = struct {
@@ -29,7 +43,10 @@ pub const Node = struct {
             token: TokenIndex,
         },
         bound_identifier: NodeIndex,
-        builtin: BuiltinOperation,
+        builtin: struct {
+            arguments: NodeIndexList,
+            operation: BuiltinOperation,
+        },
         function: struct {
             arguments: NodeIndexList,
             body: NodeIndex,
@@ -63,6 +80,9 @@ pub const Node = struct {
             },
             .application => {
                 self.data.application.arguments.deinit();
+            },
+            .builtin => {
+                self.data.builtin.arguments.deinit();
             },
             else => {},
         }
