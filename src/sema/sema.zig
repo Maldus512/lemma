@@ -45,7 +45,7 @@ pub const Result = struct {
         return self.node_list.items[index].inferred_type;
     }
 
-    pub fn getType(self: *const Self, index: IrtNodeIndex) *const Type {
+    pub fn getType(self: *const Self, index: TypeIndex) *const Type {
         return &self.type_list.items[index];
     }
 
@@ -238,8 +238,8 @@ const Sema = struct {
                     .addition, .subtraction, .multiplication, .division => {
                         return self.allocateBuiltin(
                             BuiltinOperation.fromAstOperator(ast_node.data.operation.operator) orelse unreachable,
-                            ast_node.data.operation.lhs,
-                            ast_node.data.operation.rhs,
+                            try self.ast_to_it(ast_node.data.operation.lhs),
+                            try self.ast_to_it(ast_node.data.operation.rhs),
                         );
                     },
                 }

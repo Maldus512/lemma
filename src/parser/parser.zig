@@ -69,11 +69,11 @@ pub const ParseResult = struct {
 };
 
 /// Parse a source text into an AST
-pub fn parse(gpa: Allocator, source: []const u8) !ParseResult {
-    const scan_result = try imports.lexer.scan(gpa, source);
-    const node_list = AstNodeList.init(gpa);
+pub fn parse(allocator: Allocator, source: []const u8) !ParseResult {
+    const scan_result = try imports.lexer.scan(allocator, source);
+    const node_list = AstNodeList.init(allocator);
 
-    var parser = Parser{ .gpa = gpa, .token_iterator = scan_result.intoIter(), .node_list = node_list };
+    var parser = Parser{ .allocator = allocator, .token_iterator = scan_result.intoIter(), .node_list = node_list };
     const root = try parser.parse();
 
     return ParseResult{
@@ -85,7 +85,7 @@ pub fn parse(gpa: Allocator, source: []const u8) !ParseResult {
 
 const Parser = struct {
     //TODO: save errors in a list for ease of access
-    gpa: Allocator,
+    allocator: Allocator,
     token_iterator: ScanResultIterator,
     node_list: AstNodeList,
 
@@ -122,7 +122,7 @@ const Parser = struct {
 
         //TODO: polymorphic variables
 
-        var arguments = AstNodeIndexList.init(self.gpa);
+        var arguments = AstNodeIndexList.init(self.allocator);
         errdefer arguments.deinit();
 
         while (!self.atToken(.double_arrow)) {
@@ -233,7 +233,7 @@ const Parser = struct {
     }
 
     fn allocateInvalid(self: *Self, index: TokenIndex, while_parsing: []const AstNodeTag, valid_nodes: []const AstNodeIndex) Error!AstNodeIndex {
-        var valid_nodes_list = AstNodeIndexList.init(self.gpa);
+        var valid_nodes_list = AstNodeIndexList.init(self.allocator);
         try valid_nodes_list.appendSlice(valid_nodes);
 
         return self.allocateAstNode(try AstNode.invalidFromSlice(index, valid_nodes_list, while_parsing));

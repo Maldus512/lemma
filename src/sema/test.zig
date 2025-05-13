@@ -28,8 +28,6 @@ test "Values" {
     }
 }
 
-test "MergeFindSet" {}
-
 test "Identifiers" {
     const allocator = testing.allocator;
 
@@ -84,7 +82,7 @@ test "Builtin" {
     const allocator = testing.allocator;
 
     {
-        const source = "x + y";
+        const source = "1 + 2";
         const result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
@@ -108,7 +106,7 @@ test "Builtin" {
         }
 
         {
-            const rhs = result.getNode(root.data.builtin.arguments.items[0]);
+            const rhs = result.getNode(root.data.builtin.arguments.items[1]);
             const string = try result.displayType(allocator, result.getNodeTypeIndex(rhs.inferred_type));
             defer allocator.free(string);
 

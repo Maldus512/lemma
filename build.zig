@@ -3,42 +3,74 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
+pub fn build(b: *std.Build) !void {
+    const allocator = std.heap.page_allocator;
+
+    var env = try std.process.getEnvMap(allocator);
+    defer env.deinit();
+
+    const custom_llvm_path = b.option([]const u8, "llvm_path", "Path to custom LLVM installation");
+    const custom_libstdcpp_path = b.option([]const u8, "libstdcpp_path", "Path to custom libstdc++.a library");
+
     const target = b.standardTargetOptions(.{});
 
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
-        .name = "compiler",
-        // In this case the main source file is merely a path, however, in more
-        // complicated build scripts, this could be a generated file.
-        .root_source_file = .{ .path = "src/main.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // This declares intent for the library to be installed into the standard
-    // location when the user invokes the "install" step (the default step when
-    // running `zig build`).
-    lib.install();
-
     // Creates a step for unit testing.
-    const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "test.zig" },
+    const tests = b.addTest(.{
+        .root_source_file = .{ .cwd_relative = "test.zig" },
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
+        .link_libcpp = true,
     });
 
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build test`
-    // This will evaluate the `test` step rather than the default, which is "install".
-    const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&main_tests.step);
+    if (custom_llvm_path orelse env.get("LEMMA_LLVM_PATH")) |path| {
+        const lib_path = try std.fs.path.join(allocator, &[_][]const u8{ path, "lib" });
+        defer allocator.free(lib_path);
+        tests.addLibraryPath(.{ .cwd_relative = lib_path });
+
+        const include_path = try std.fs.path.join(allocator, &[_][]const u8{ path, "include" });
+        defer allocator.free(include_path);
+        tests.addIncludePath(.{ .cwd_relative = include_path });
+    }
+
+    var llvm_libs = std.ArrayList([]const u8).init(allocator);
+    defer {
+        for (llvm_libs.items) |string| {
+            allocator.free(string);
+        }
+        llvm_libs.deinit();
+    }
+
+    const llvm_config_output = b.run(&[_][]const u8{ "llvm-config", "--libs", "core", "executionengine", "interpreter", "analysis", "native", "bitwriter" });
+    var it = std.mem.splitSequence(u8, llvm_config_output, " ");
+    while (it.next()) |libflag| {
+        const no_newline = try std.mem.replaceOwned(u8, allocator, libflag, "\n", "");
+        defer allocator.free(no_newline);
+
+        try llvm_libs.insert(0, try std.mem.replaceOwned(u8, allocator, no_newline, "-l", ""));
+    }
+
+    for (llvm_libs.items) |llvm_lib| {
+        tests.linkSystemLibrary(llvm_lib);
+    }
+
+    tests.linkSystemLibrary("rt");
+    tests.linkSystemLibrary("dl");
+    tests.linkSystemLibrary("m");
+    tests.linkSystemLibrary("z");
+    tests.linkSystemLibrary("zstd");
+    tests.linkSystemLibrary("xml2");
+    tests.linkSystemLibrary("pthread");
+
+    if (custom_libstdcpp_path orelse env.get("LEMMA_LIBSTDCPP_PATH")) |path| {
+        tests.addObjectFile(.{ .cwd_relative = path });
+    }
+
+    const test_step = b.step("test", "Run unit tests");
+    const run_tests = b.addRunArtifact(tests);
+    test_step.dependOn(&run_tests.step);
+    const ins_lib_unit_tests = b.addInstallArtifact(tests, .{});
+    test_step.dependOn(&ins_lib_unit_tests.step);
 }
