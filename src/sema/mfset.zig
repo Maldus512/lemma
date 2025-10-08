@@ -13,6 +13,7 @@ const TypeIndex = imports.irt.TypeIndex;
 pub const NodeList = std.ArrayList(Node);
 
 pub const MergeFindSet = struct {
+    allocator: Allocator,
     nodes: NodeList,
     type_list: TypeList,
     number_type_index: TypeIndex,
@@ -21,15 +22,16 @@ pub const MergeFindSet = struct {
     const Self = @This();
 
     pub fn init(allocator: Allocator) !Self {
-        var type_list = TypeList.init(allocator);
+        var type_list = TypeList{};
 
         const number_type_index: TypeIndex = @intCast(type_list.items.len);
-        try type_list.append(.number);
+        try type_list.append(allocator, .number);
         const invalid_type_index: TypeIndex = @intCast(type_list.items.len);
-        try type_list.append(.invalid);
+        try type_list.append(allocator, .invalid);
 
         return Self{
-            .nodes = NodeList.init(allocator),
+            .allocator = allocator,
+            .nodes = NodeList{},
             .type_list = type_list,
             .number_type_index = number_type_index,
             .invalid_type_index = invalid_type_index,
@@ -37,15 +39,15 @@ pub const MergeFindSet = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.nodes.deinit();
-        self.type_list.deinit();
+        self.nodes.deinit(self.allocator);
+        self.type_list.deinit(self.allocator);
     }
 
     pub fn makeNew(self: *Self) !TypeIndex {
         const type_variable: TypeVariable = @intCast(self.nodes.items.len);
         const type_index = try self.allocateType(Type{ .variable = type_variable });
 
-        try self.nodes.append(Node{
+        try self.nodes.append(self.allocator, Node{
             .root = .{
                 .value = type_index,
                 .rank = 0,
@@ -160,7 +162,7 @@ pub const MergeFindSet = struct {
             return self.number_type_index;
         } else {
             const index = self.type_list.items.len;
-            try self.type_list.append(ltype);
+            try self.type_list.append(self.allocator, ltype);
             return @intCast(index);
         }
     }

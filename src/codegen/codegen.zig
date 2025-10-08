@@ -91,12 +91,12 @@ const Codegen = struct {
                 }
             },
             .function => {
-                var arguments = std.ArrayList(llvm.TypeRef).init(self.allocator);
-                defer arguments.deinit();
+                var arguments = std.ArrayList(llvm.TypeRef){};
+                defer arguments.deinit(self.allocator);
 
                 for (node.data.function.arguments.items) |argument_index| {
                     const irt_type_index = self.sema.getNodeTypeIndex(argument_index);
-                    try arguments.append(try self.irtToLLVMType(irt_type_index));
+                    try arguments.append(self.allocator, try self.irtToLLVMType(irt_type_index));
                 }
 
                 const return_type_index = self.sema.getNodeTypeIndex(node.data.function.body);
@@ -124,16 +124,16 @@ const Codegen = struct {
         switch (irt_type.*) {
             .number => return self.int32_type,
             .arrow => |arrow| {
-                var arguments = std.ArrayList(llvm.TypeRef).init(self.allocator);
-                defer arguments.deinit();
+                var arguments = std.ArrayList(llvm.TypeRef){};
+                defer arguments.deinit(self.allocator);
 
-                try arguments.insert(0, try self.irtToLLVMType(arrow.argument));
+                try arguments.insert(self.allocator, 0, try self.irtToLLVMType(arrow.argument));
 
                 var return_irt_type_index = arrow.result;
                 var return_irt_type = self.sema.getType(return_irt_type_index);
 
                 while (return_irt_type.* == .arrow) {
-                    try arguments.insert(0, try self.irtToLLVMType(return_irt_type.arrow.argument));
+                    try arguments.insert(self.allocator, 0, try self.irtToLLVMType(return_irt_type.arrow.argument));
                     return_irt_type_index = return_irt_type.arrow.result;
                     return_irt_type = self.sema.getType(return_irt_type_index);
                 }

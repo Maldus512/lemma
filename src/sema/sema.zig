@@ -30,6 +30,7 @@ const Environment = std.StringHashMap(IrtNodeIndex);
 const Constraints = std.ArrayList(std.meta.Tuple(&.{ TypeIndex, TypeIndex }));
 
 pub const Result = struct {
+    allocator: Allocator,
     root: IrtNodeIndex,
     node_list: IrtNodeList,
     type_list: TypeList,
@@ -58,28 +59,29 @@ pub const Result = struct {
     }
 
     /// Deinitialize
-    pub fn deinit(self: *const Self) void {
-        self.constraints.deinit();
-        for (self.node_list.items) |node| {
-            node.deinit();
+    pub fn deinit(self: *Self) void {
+        self.constraints.deinit(self.allocator);
+        for (self.node_list.items) |*node| {
+            node.deinit(self.allocator);
         }
-        self.node_list.deinit();
-        self.type_list.deinit();
+        self.node_list.deinit(self.allocator);
+        self.type_list.deinit(self.allocator);
     }
 };
 
 pub fn analyze(gpa: Allocator, source: []const u8) !Result {
-    const parse_result = try imports.parser.parse(gpa, source);
+    var parse_result = try imports.parser.parse(gpa, source);
 
     var sema = try Sema.new(gpa, parse_result);
 
     const root = try sema.analyze();
     parse_result.deinit();
 
-    sema.mfset.nodes.deinit();
+    sema.mfset.nodes.deinit(gpa);
     sema.env.deinit();
 
     return Result{
+        .allocator = gpa,
         .root = root,
         .node_list = sema.node_list,
         .type_list = sema.mfset.type_list,
@@ -100,7 +102,7 @@ const Sema = struct {
 
     fn new(gpa: Allocator, parse_result: ParseResult) !Self {
         const mfset = try MergeFindSet.init(gpa);
-        const node_list = IrtNodeList.init(gpa);
+        const node_list = IrtNodeList{};
 
         return Sema{
             .gpa = gpa,
@@ -108,7 +110,7 @@ const Sema = struct {
             .ast = parse_result,
             .node_list = node_list,
             .env = Environment.init(gpa),
-            .constraints = Constraints.init(gpa),
+            .constraints = Constraints{},
         };
     }
 
@@ -192,10 +194,10 @@ const Sema = struct {
                 var new_map = Environment.init(self.gpa);
                 defer new_map.deinit();
 
-                var it_arguments = IrtNodeIndexList.init(self.gpa);
+                var it_arguments = IrtNodeIndexList{};
 
                 for (ast_node.data.function.arguments.items) |argument| {
-                    try it_arguments.append(try self.addItemToEnvironment(&shadow_map, &new_map, argument));
+                    try it_arguments.append(self.gpa, try self.addItemToEnvironment(&shadow_map, &new_map, argument));
                 }
 
                 const body = try self.ast_to_it(ast_node.data.function.body);
@@ -215,11 +217,11 @@ const Sema = struct {
             .operation => {
                 switch (ast_node.data.operation.operator) {
                     .application => {
-                        var arguments = IrtNodeIndexList.init(self.gpa);
+                        var arguments = IrtNodeIndexList{};
 
                         var next = ast_node_index;
                         while (self.ast.getNode(next).tag == .operation and self.ast.getNode(next).data.operation.operator == .application) {
-                            try arguments.append(try self.ast_to_it(self.ast.getNode(next).data.operation.rhs));
+                            try arguments.append(self.gpa, try self.ast_to_it(self.ast.getNode(next).data.operation.rhs));
                             next = self.ast.getNode(next).data.operation.lhs;
                         }
                         // First of the application chain
@@ -228,8 +230,8 @@ const Sema = struct {
                         return self.allocateApplication(function, arguments);
                     },
                     .forwarding => {
-                        var arguments = IrtNodeIndexList.init(self.gpa);
-                        try arguments.append(try self.ast_to_it(ast_node.data.operation.lhs));
+                        var arguments = IrtNodeIndexList{};
+                        try arguments.append(self.gpa, try self.ast_to_it(ast_node.data.operation.lhs));
 
                         const function = try self.ast_to_it(ast_node.data.operation.rhs);
 
@@ -270,7 +272,7 @@ const Sema = struct {
 
     fn allocateNode(self: *Self, node: IrtNode) !IrtNodeIndex {
         const index = self.node_list.items.len;
-        try self.node_list.append(node);
+        try self.node_list.append(self.gpa, node);
         return @intCast(index);
     }
 
@@ -376,9 +378,9 @@ const Sema = struct {
     }
 
     fn allocateBuiltin(self: *Self, operation: BuiltinOperation, lhs: IrtNodeIndex, rhs: IrtNodeIndex) !IrtNodeIndex {
-        var arguments = IrtNodeIndexList.init(self.gpa);
-        try arguments.append(lhs);
-        try arguments.append(rhs);
+        var arguments = IrtNodeIndexList{};
+        try arguments.append(self.gpa, lhs);
+        try arguments.append(self.gpa, rhs);
 
         return self.allocateNode(IrtNode{
             .tag = .builtin,
@@ -407,7 +409,7 @@ const Sema = struct {
     }
 
     fn addEqualityTypeConstraint(self: *Self, first: TypeIndex, second: TypeIndex) !void {
-        try self.constraints.append(.{ first, second });
+        try self.constraints.append(self.gpa, .{ first, second });
     }
 
     fn occurs(self: *const Self, type_index: TypeIndex, variable: TypeVariable) bool {

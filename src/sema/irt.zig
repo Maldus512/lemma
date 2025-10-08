@@ -73,16 +73,16 @@ pub const Node = struct {
 
     const Self = @This();
 
-    pub fn deinit(self: *const Self) void {
+    pub fn deinit(self: *Self, allocator: Allocator) void {
         switch (self.tag) {
             .function => {
-                self.data.function.arguments.deinit();
+                self.data.function.arguments.deinit(allocator);
             },
             .application => {
-                self.data.application.arguments.deinit();
+                self.data.application.arguments.deinit(allocator);
             },
             .builtin => {
-                self.data.builtin.arguments.deinit();
+                self.data.builtin.arguments.deinit(allocator);
             },
             else => {},
         }

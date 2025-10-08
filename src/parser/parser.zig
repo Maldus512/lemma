@@ -23,6 +23,7 @@ const Error = error{ OutOfMemory, Overflow };
 
 /// Parse result
 pub const ParseResult = struct {
+    allocator: Allocator,
     /// Reference to the original scan result
     scan_result: ScanResult,
     /// Abstract Syntax Tree root
@@ -59,24 +60,25 @@ pub const ParseResult = struct {
     }
 
     /// Deinitialize
-    pub fn deinit(self: *const Self) void {
+    pub fn deinit(self: *Self) void {
         self.scan_result.deinit();
-        for (self.node_list.items) |node| {
-            node.deinit();
+        for (self.node_list.items) |*node| {
+            node.deinit(self.allocator);
         }
-        self.node_list.deinit();
+        self.node_list.deinit(self.allocator);
     }
 };
 
 /// Parse a source text into an AST
 pub fn parse(allocator: Allocator, source: []const u8) !ParseResult {
     const scan_result = try imports.lexer.scan(allocator, source);
-    const node_list = AstNodeList.init(allocator);
+    const node_list = AstNodeList{};
 
     var parser = Parser{ .allocator = allocator, .token_iterator = scan_result.intoIter(), .node_list = node_list };
     const root = try parser.parse();
 
     return ParseResult{
+        .allocator = allocator,
         .scan_result = scan_result,
         .root = root,
         .node_list = parser.node_list,
@@ -122,15 +124,15 @@ const Parser = struct {
 
         //TODO: polymorphic variables
 
-        var arguments = AstNodeIndexList.init(self.allocator);
-        errdefer arguments.deinit();
+        var arguments = AstNodeIndexList{};
+        errdefer arguments.deinit(self.allocator);
 
         while (!self.atToken(.double_arrow)) {
-            try arguments.append(try self.parsePattern());
+            try arguments.append(self.allocator, try self.parsePattern());
         }
 
         if (self.expectToken(.double_arrow) == null) {
-            defer arguments.deinit();
+            defer arguments.deinit(self.allocator);
             return self.allocateInvalid(index, &.{.function}, arguments.items);
         }
 
@@ -233,15 +235,15 @@ const Parser = struct {
     }
 
     fn allocateInvalid(self: *Self, index: TokenIndex, while_parsing: []const AstNodeTag, valid_nodes: []const AstNodeIndex) Error!AstNodeIndex {
-        var valid_nodes_list = AstNodeIndexList.init(self.allocator);
-        try valid_nodes_list.appendSlice(valid_nodes);
+        var valid_nodes_list = AstNodeIndexList{};
+        try valid_nodes_list.appendSlice(self.allocator, valid_nodes);
 
         return self.allocateAstNode(try AstNode.invalidFromSlice(index, valid_nodes_list, while_parsing));
     }
 
     fn allocateAstNode(self: *Self, node: AstNode) !AstNodeIndex {
         const index = self.node_list.items.len;
-        try self.node_list.append(node);
+        try self.node_list.append(self.allocator, node);
         return @intCast(index);
     }
 

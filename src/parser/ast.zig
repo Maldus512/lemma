@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 const imports = .{
     .lexer = @import("../lexer/lexer.zig"),
@@ -57,7 +58,7 @@ pub const Node = struct {
         },
         //TODO: add expected_instead
         invalid: struct {
-            while_parsing: TagBoundedArray,
+            while_parsing: [4]Tag,
             valid_nodes: NodeIndexList,
         },
     },
@@ -74,23 +75,29 @@ pub const Node = struct {
         invalid,
     };
 
-    const TagBoundedArray = std.BoundedArray(Tag, 4);
-
     const Self = @This();
 
     /// Invalid node constructor
     pub fn invalidFromSlice(token: TokenIndex, valid_nodes: NodeIndexList, while_parsing: []const Tag) !Self {
-        const while_parsing_array = try TagBoundedArray.fromSlice(while_parsing);
-        return Self{ .token = token, .tag = .invalid, .data = .{ .invalid = .{ .while_parsing = while_parsing_array, .valid_nodes = valid_nodes } } };
+        var self = Self{
+            .token = token,
+            .tag = .invalid,
+            .data = .{
+                .invalid = .{ .while_parsing = undefined, .valid_nodes = valid_nodes },
+            },
+        };
+        @memcpy(&self.data.invalid.while_parsing, while_parsing[0..while_parsing.len]);
+
+        return self;
     }
 
-    pub fn deinit(self: *const Self) void {
+    pub fn deinit(self: *Self, allocator: Allocator) void {
         switch (self.tag) {
             .function => {
-                self.data.function.arguments.deinit();
+                self.data.function.arguments.deinit(allocator);
             },
             .invalid => {
-                self.data.invalid.valid_nodes.deinit();
+                self.data.invalid.valid_nodes.deinit(allocator);
             },
             else => {},
         }

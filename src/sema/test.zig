@@ -15,7 +15,7 @@ test "Values" {
 
     {
         const source = "1";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const root = result.getRoot();
@@ -33,7 +33,7 @@ test "Identifiers" {
 
     {
         const source = "x";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const root = result.getRoot();
@@ -47,7 +47,7 @@ test "Identifiers" {
 
     {
         const source = "fn x => x";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const root = result.getRoot();
@@ -63,7 +63,7 @@ test "Identifiers" {
 
     {
         const source = "fn x y => x";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const root = result.getRoot();
@@ -83,7 +83,7 @@ test "Builtin" {
 
     {
         const source = "1 + 2";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const root = result.getRoot();
@@ -120,7 +120,7 @@ test "Application" {
 
     {
         const source = "foo x y z";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const root = result.getRoot();
@@ -130,7 +130,7 @@ test "Application" {
 
     {
         const source = "x |> foo";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const root = result.getRoot();
@@ -144,7 +144,7 @@ test "Type inference" {
 
     {
         const source = "fn x y => x y";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));
@@ -155,7 +155,7 @@ test "Type inference" {
 
     {
         const source = "fn x y z => x y z";
-        const result = try imports.sema.analyze(allocator, source);
+        var result = try imports.sema.analyze(allocator, source);
         defer result.deinit();
 
         const string = try result.displayType(allocator, result.getNodeTypeIndex(result.root));

@@ -72,8 +72,8 @@ test "Keywords" {
 
     const allocator = testing.allocator;
     var source_string: []u8 = "";
-    var positions = std.ArrayList(std.meta.Tuple(&.{ usize, usize })).init(allocator);
-    defer positions.deinit();
+    var positions = std.ArrayList(std.meta.Tuple(&.{ usize, usize })){};
+    defer positions.deinit(allocator);
 
     for (expected_tokens) |expected_token| {
         // Isolated test
@@ -81,14 +81,14 @@ test "Keywords" {
 
         const new_string = try std.fmt.allocPrint(allocator, "{s} {s}", .{ source_string, expected_token.string });
 
-        try positions.append(.{ source_string.len + 1, source_string.len + 1 + expected_token.string.len });
+        try positions.append(allocator, .{ source_string.len + 1, source_string.len + 1 + expected_token.string.len });
 
         allocator.free(source_string);
         source_string = new_string;
     }
     defer allocator.free(source_string);
 
-    const result = try imports.lexer.scan(allocator, source_string);
+    var result = try imports.lexer.scan(allocator, source_string);
     defer result.deinit();
 
     try testing.expectEqual(expected_tokens.len, result.tokens.items.len);

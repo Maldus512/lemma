@@ -18,11 +18,14 @@ pub fn build(b: *std.Build) !void {
 
     // Creates a step for unit testing.
     const tests = b.addTest(.{
-        .root_source_file = .{ .cwd_relative = "test.zig" },
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .link_libcpp = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{},
+            .link_libc = true,
+            .link_libcpp = false,
+        }),
     });
 
     if (custom_llvm_path orelse env.get("LEMMA_LLVM_PATH")) |path| {
@@ -35,12 +38,12 @@ pub fn build(b: *std.Build) !void {
         tests.addIncludePath(.{ .cwd_relative = include_path });
     }
 
-    var llvm_libs = std.ArrayList([]const u8).init(allocator);
+    var llvm_libs = std.ArrayList([]const u8){};
     defer {
         for (llvm_libs.items) |string| {
             allocator.free(string);
         }
-        llvm_libs.deinit();
+        llvm_libs.deinit(allocator);
     }
 
     const llvm_config_output = b.run(&[_][]const u8{ "llvm-config", "--libs", "core", "executionengine", "interpreter", "analysis", "native", "bitwriter" });
@@ -49,7 +52,7 @@ pub fn build(b: *std.Build) !void {
         const no_newline = try std.mem.replaceOwned(u8, allocator, libflag, "\n", "");
         defer allocator.free(no_newline);
 
-        try llvm_libs.insert(0, try std.mem.replaceOwned(u8, allocator, no_newline, "-l", ""));
+        try llvm_libs.insert(allocator, 0, try std.mem.replaceOwned(u8, allocator, no_newline, "-l", ""));
     }
 
     for (llvm_libs.items) |llvm_lib| {
@@ -63,6 +66,7 @@ pub fn build(b: *std.Build) !void {
     tests.linkSystemLibrary("zstd");
     tests.linkSystemLibrary("xml2");
     tests.linkSystemLibrary("pthread");
+    tests.linkSystemLibrary("unwind");
 
     if (custom_libstdcpp_path orelse env.get("LEMMA_LIBSTDCPP_PATH")) |path| {
         tests.addObjectFile(.{ .cwd_relative = path });

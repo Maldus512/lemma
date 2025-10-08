@@ -19,6 +19,8 @@ pub const TokenIndex = usize;
 
 /// Result of the scanning procedure
 pub const ScanResult = struct {
+    allocator: Allocator,
+
     /// Reference to the source code
     source: []const u8,
 
@@ -42,8 +44,8 @@ pub const ScanResult = struct {
     }
 
     /// Deinitialize
-    pub fn deinit(self: *const Self) void {
-        self.tokens.deinit();
+    pub fn deinit(self: *Self) void {
+        self.tokens.deinit(self.allocator);
     }
 };
 
@@ -93,16 +95,16 @@ pub const ScanResultIterator = struct {
 };
 
 pub fn scan(allocator: Allocator, source: []const u8) !ScanResult {
-    var tokens = TokenList.init(allocator);
-    errdefer tokens.deinit();
+    var tokens = TokenList{};
+    errdefer tokens.deinit(allocator);
 
     var lexer = Lexer{ .allocator = allocator, .index = 0, .source = source };
 
     while (try lexer.getToken()) |token| {
         // Scan everything
-        try tokens.append(token);
+        try tokens.append(allocator, token);
     }
-    return ScanResult{ .source = source, .tokens = tokens };
+    return ScanResult{ .source = source, .tokens = tokens, .allocator = allocator };
 }
 
 const Lexer = struct {
